@@ -160,10 +160,10 @@ def main():
         log.info("Using RSA key in {}".format(args.ssh_public_key))
     else:
         (pub, priv) = sshkeys.generate_key_pair(args.private_key_password)
-        ssh_pubkey_data = pub
-        with open("{}".format(args.output_ssh_key), 'w') as f:
+        ssh_pubkey_data = pub.decode()
+        with open("{}".format(args.output_ssh_key), 'wb') as f:
             f.write(priv)
-        with open("{}.pub".format(args.output_ssh_key), 'w') as f:
+        with open("{}.pub".format(args.output_ssh_key), 'wb') as f:
             f.write(pub)
         log.info("Written private and public key pair to {0} and {0}.pub, respectively".format(args.output_ssh_key))
 

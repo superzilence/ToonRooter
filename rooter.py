@@ -10,7 +10,9 @@ import string
 import random
 from time import sleep
 from serial.serialutil import Timeout
-import StringIO
+#import StringIO
+from io import StringIO
+from io import BytesIO
 import tempfile
 
 logging.basicConfig(level=logging.DEBUG)
@@ -85,16 +87,16 @@ class Rooter(object):
     def read_uboot_version(self):
         version_line_match = re.compile(r'^U-Boot ([^ ]+)')
         while True:
-            line = self._port.readline().strip()
+            line = self._port.readline().strip().decode()
             match = version_line_match.match(line)
             if match:
                 return match.group(1)
 
     def access_uboot(self, password):
         log.info("Logging in to U-Boot")
-        self._port.write(password)
+        self._port.write(password.encode())
         self._port.flush()
-        log.debug(self._port.read_until("U-Boot>"))
+        log.debug(self._port.read_until(b"U-Boot>").decode())
         log.debug("Logged in to U-Boot")
 
     def patch_uboot(self):
@@ -103,14 +105,14 @@ class Rooter(object):
         log.info("Patching U-Boot")
         port.reset_input_buffer()
         sleep(0.1)
-        port.write("printenv\n")
+        port.write(b"printenv\n")
         port.flush()
         add_misc_match = re.compile(r'^addmisc=(.+)$')
         add_misc_val = None
 
         sleep(0.5)
 
-        lines = port.read_until("U-Boot>")
+        lines = port.read_until(b"U-Boot>").decode()
         log.debug(lines)
         for line in lines.split('\n'):
             line = line.strip()
@@ -124,10 +126,11 @@ class Rooter(object):
             return
 
         cmd = "setenv addmisc " + re.sub(r'([\$;])',r'\\\1', add_misc_val + " init=/bin/sh")
-        port.write(cmd + "\n")
+        cmdn = cmd + "\n"
+        port.write(cmdn.encode())
         port.flush()
-        log.debug(port.read_until("U-Boot>"))
-        port.write("run boot_nand\n")
+        log.debug(port.read_until(b"U-Boot>"))
+        port.write(b"run boot_nand\n")
         port.flush()
 
     def create_payload_tar(self):
@@ -136,46 +139,48 @@ class Rooter(object):
         with tarfile.open(tar_path, "w:gz") as tar:
             tar.add('payload/', arcname='payload')
 
-            ssh_key_str = StringIO.StringIO(ssh_key)
+            ssh_key_str = StringIO(ssh_key)
 
             info = tarfile.TarInfo(name="payload/id_rsa.pub")
             info.size=len(ssh_key)
 
-            tar.addfile(tarinfo=info, fileobj=StringIO.StringIO(ssh_key))
+            tar.addfile(tarinfo=info, fileobj=BytesIO(ssh_key.encode())) #<--
         return tar_path
 
     def write_payload(self):
         port = self._port
         tar_path = self.create_payload_tar()
 
-        log.debug(port.read_until("/ # "))
-        port.write("base64 -d | tar zxf -\n")
+        log.debug(port.read_until(b"/ # ").decode())
+        port.write(b"base64 -d | tar zxf -\n")
         port.flush()
         #(tarr, tarw) = os.pipe()
         #tar = tarfile.open(mode='w|gz', fileobj=tarw)
         #tar.add("payload/patch_toon.sh")
 
         log.info("Transferring payload")
-        with open(tar_path, 'r') as f:
+        with open(tar_path, 'rb') as f:
             base64.encode(f, port)
 
         os.remove(tar_path)
 
         port.flush()
         port.reset_input_buffer()
-        port.write("\x04")
+        port.write(b"\x04")
         port.flush()
 
     def patch_toon(self):
         (port, clean_up, reboot) = (
             self._port, self._cleanup_payload, self._reboot_after)
         log.info("Patching Toon")
-        log.debug(port.read_until("/ # "))
-        password = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(8))
-        port.write("sh payload/patch_toon.sh \"{}\"\n".format(password))
+        log.debug(port.read_until(b"/ # ").decode())
+        #password = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+        password = "toon"
+        port.write("sh payload/patch_toon.sh \"{}\"\n".format(password).encode())
+
         try:
             while True:
-                line = read_until(port, ["/ # ", "\n"])
+                line = read_until(port, [b"/ # ", b"\n"]).decode()
                 if line == "/ # ":
                     break
                 if line.startswith(">>>"):
@@ -187,11 +192,11 @@ class Rooter(object):
             sleep(5)
         if clean_up:
             log.info("Cleaning up")
-            port.write("rm -r payload\n")
-            log.debug(port.read_until("/ # "))
+            port.write(b"rm -r payload\n")
+            log.debug(port.read_until(b"/ # ").decode())
         if reboot:
             log.info("Rebooting")
-            port.write("/etc/init.d/reboot\n")
+            port.write(b"/etc/init.d/reboot\n")
 
     def start_bootloader(self, bin_path):
 
@@ -233,13 +238,39 @@ class Rooter(object):
 
         proc.terminate()
 
-def read_until(port, terminators=None, size=None):
+def read_until(port, terminators=None, size=None, overall_timeout=None):
+    """
+    Read until any of the termination sequences is found, size is exceeded,
+    or timeout occurs. Returns bytes (including the terminator when found).
+    """
+    if terminators is None:
+        terminators = [b'\n']
+    # In Py3, map returns an iterator; we need a list we can iterate multiple times.
+    terms = [(t, len(t)) for t in terminators]
+
+    buf = bytearray()
+
+    while True:
+        c = port.read(1)  # obeys port.timeout
+        if c:
+            buf += c
+            for term, n in terms:
+                if n and buf[-n:] == term:
+                    return bytes(buf)
+            if size is not None and len(buf) >= size:
+                return bytes(buf)
+        else:
+            if port.timeout is not None:
+                # if a per-read timeout is set, return whatever we have
+                return bytes(buf)
+
+def read_untilold(port, terminators=None, size=None):
     """\
     Read until any of the termination sequences is found ('\n' by default), the size
     is exceeded or until timeout occurs.
     """
     if not terminators:
-        terminators = ['\n']
+        terminators = [b'\n']
     terms = map(lambda t: (t, len(t)), terminators)
     line = bytearray()
     timeout = Timeout(port._timeout)
