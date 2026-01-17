@@ -78,6 +78,37 @@ sudo python . --jtag-available
 
 Then reset your Toon and let the magic happen :)
 
+## Example screen dump
+```bash
+INFO:__main__:Starting up...
+INFO:__main__:Detected JTAG hardware 'rpi3'
+INFO:__main__:Written private and public key pair to ./id_rsa and ./id_rsa.pub, respectively
+INFO:rooter:Waiting for Toon to restart
+INFO:rooter:Toon has U-Boot version 2010.09-R10
+INFO:rooter:Loading new bootloader
+INFO:rooter:Starting openocd
+INFO:rooter:Waiting for 10 seconds
+INFO:rooter:Halting CPU
+INFO:rooter:Loading new image to RAM
+INFO:rooter:Starting up new image
+INFO:rooter:Waiting for Toon to restart
+INFO:rooter:Toon has U-Boot version 2010.09
+INFO:rooter:Using password to log in
+INFO:rooter:Logging in to U-Boot
+INFO:rooter:Patching U-Boot
+INFO:rooter:Waiting for boot up
+INFO:rooter:Transferring payload
+INFO:rooter:Patching Toon
+INFO:rooter:>>> Enabling root user. Your root password is: toon
+INFO:rooter:>>> Opening ports 22, 80 and 10080 on firewall
+INFO:rooter:>>> Disable VPN on boot
+INFO:rooter:>>> Installing dropbear
+INFO:rooter:>>> Installing openssh-sftp-server
+INFO:rooter:Cleaning up
+INFO:rooter:Rebooting
+INFO:rooter:Your Toon is now rooted. Please wait for it to boot up and try to log in using SSH
+```
+
 ## Logging in to the Toon after rooting
 
 During the rooting process, the script will generate a random root password and output it to 
