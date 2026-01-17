@@ -64,10 +64,14 @@ Then make sure the serial port on the Pi is enabled and the serial console is di
 using `sudo raspi-config` and reboot if necessary. Install the dependencies mentioned in the
 [Dependencies](#dependencies)-section.
 
-Then get and run this application:
+Then get and clone this application:
 ```bash
 sudo apt install python3-serial python3-cryptography
 git clone https://github.com/superzilence/ToonRooter.git
+```
+
+run this application:
+```bash
 cd ToonRooter
 sudo python . --jtag-available
 ```
