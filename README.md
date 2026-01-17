@@ -183,18 +183,86 @@ you need to build a version of OpenOCD (at the time of writing the version in ap
 doesn't support using the Pi's headers as JTAG debugger).
 
 ```bash
-git clone --recursive git://git.code.sf.net/p/openocd/code openocd
-cd openocd
-sudo apt install make libtool libtool-bin pkg-config autoconf automake texinfo libusb-1.0 libusb-dev
-{
-./bootstrap &&\
-./configure --enable-sysfsgpio\
-     --enable-bcm2835gpio \
-     --prefix=/usr\
-&&\
-make -j4
-} 2>&1 | tee openocd_build.log
-sudo make install
+#!/usr/bin/env bash
+set -euo pipefail
+
+# OpenOCD build script for Raspberry Pi OS 64-bit (Pi 3)
+# - installs all common deps (incl. libjim-dev for jimtcl)
+# - uses tmux so build survives PuTTY disconnects
+# - logs build output
+# - uses a safer parallelism for Pi 3
+
+REPO_URL="https://git.code.sf.net/p/openocd/code"
+DIR="$HOME/openocd"
+LOG="$HOME/openocd_build.log"
+JOBS="${JOBS:-2}"
+
+echo "[1/6] System update + dependencies"
+sudo apt update
+sudo apt install -y \
+  git \
+  build-essential \
+  autoconf automake libtool libtool-bin \
+  pkg-config \
+  texinfo \
+  libusb-1.0-0-dev \
+  libftdi1-dev \
+  libhidapi-dev \
+  libjim-dev \
+  tmux
+
+echo "[2/6] Quick health check (power/undervoltage flags)"
+if command -v vcgencmd >/dev/null 2>&1; then
+  echo "vcgencmd get_throttled: $(vcgencmd get_throttled || true)"
+else
+  echo "vcgencmd not found (ok, continuing)"
+fi
+
+echo "[3/6] Clone/update OpenOCD repo"
+if [[ -d "$DIR/.git" ]]; then
+  cd "$DIR"
+  git fetch --all --prune
+  git pull --rebase
+  git submodule update --init --recursive
+else
+  git clone --recursive "$REPO_URL" "$DIR"
+  cd "$DIR"
+fi
+
+echo "[4/6] Start build inside tmux (survives PuTTY disconnects)"
+SESSION="openocd-build"
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+  echo "tmux session '$SESSION' already exists."
+  echo "Attach with: tmux attach -t $SESSION"
+  exit 0
+fi
+
+tmux new -d -s "$SESSION" "bash -lc '
+  set -euo pipefail
+  cd \"$DIR\"
+
+  echo \"== OpenOCD build started: \$(date) ==\" | tee \"$LOG\"
+  echo \"Repo: $REPO_URL\" | tee -a \"$LOG\"
+  echo \"Jobs: $JOBS\" | tee -a \"$LOG\"
+
+  # Clean if previously configured
+  make distclean >/dev/null 2>&1 || true
+
+  ./bootstrap 2>&1 | tee -a \"$LOG\"
+  ./configure --prefix=/usr --enable-sysfsgpio --enable-bcm2835gpio 2>&1 | tee -a \"$LOG\"
+  make -j\"$JOBS\" 2>&1 | tee -a \"$LOG\"
+
+  echo \"== Build finished: \$(date) ==\" | tee -a \"$LOG\"
+  echo \"Run: sudo make install\" | tee -a \"$LOG\"
+'"
+
+echo
+echo "Build is running in tmux session: $SESSION"
+echo "Attach to watch:  tmux attach -t $SESSION"
+echo "Log file:         $LOG"
+echo
+echo "When build is done, install with:"
+echo "  cd \"$DIR\" && sudo make install"
 ```
 > these instructions were based on the instructions posted [here](https://www.domoticaforum.eu/viewtopic.php?f=87&t=11230&start=210#p83745) by rboers
 
