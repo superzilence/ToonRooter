@@ -66,7 +66,7 @@ using `sudo raspi-config` and reboot if necessary. Install the dependencies ment
 
 Then get and run this application:
 ```bash
-sudo apt install python-serial python-cryptography
+sudo apt install python3-serial python3-cryptography
 git clone https://github.com/martenjacobs/ToonRooter.git
 cd ToonRooter
 sudo python . --jtag-available
